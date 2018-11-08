@@ -16,27 +16,43 @@ public class ResourceManager extends PApplet {
 
 FileParser reader;
 ArrayList<Process> processes;
-ArrayList<Resource> resources;
+ArrayList<Resource> resources, lockedResources;
 ArrayList<ProcessAction> actions;
 int step;
-String currentStep;
+String currentStep, lockString;
+boolean locked;
 
+/**
+ * Basically a Constructor for the processing draw screen.
+ */
 public void setup(){
+    //Size/render library for the sketch.
     
     
+    //Had a glitch with the lines. Dont exactly know why this fixes it.
     hint(DISABLE_OPTIMIZED_STROKE);
+    reset();
+}
+
+public void reset(){
     step = 0;
+    locked = false;
+
+    //Load the data from the file.
     String path = "/Users/ryanwalt/Downloads/CODE/Java/Processing/ResourceManager/";
-    String file = "input5.data";
+    String file = "input3b.data";
     reader = new FileParser(path + file);
 
     processes = new ArrayList<Process>();
     resources = new ArrayList<Resource>();
+    lockedResources = new ArrayList<Resource>();
+
+    //Get the actions from the loaded file.
     actions = reader.getActions();
     currentStep = "";
+    lockString = "";
 
-
-    //int origin = (width/2) - ((reader.numProcesses * (60/2)) + ((reader.numProcesses-1) * (90/2)))/2;
+    //Draw the Process nodes at these XY coordinates
     int origin = 80;
     int xOffset = 120;
     int yOffset = 250;
@@ -45,32 +61,52 @@ public void setup(){
         origin += xOffset;
     }
 
-    //origin = (width/2) - ((reader.numResources * (60/2)) + ((reader.numResources - 1) * (90/2)))/2;
+    //Draw the Resource nodes at these XY coordinates
     origin = 80;
-    xOffset = 120;
+    xOffset = 90;
     yOffset = 550;
     for (int i = 0; i < reader.numResources; i++){
         resources.add(new Resource("r" + i, origin, yOffset));
         origin += xOffset;
     }
-    //n = new Node("p0", width/2, height/2);
 }
 
+/**
+ * The main animation loop. (Updates at 60 fps)
+ */
 public void draw(){
+    //Background
     background(51);
+    //Display all nodes
     showNodes();
+
+    //Display actions / deadlock text.
     fill(255);
     textSize(20);
     textAlign(CENTER);
     text(currentStep, width - 100, 50);
+    textSize(30);
+    text(lockString, width/2, height - 100);
 
+    //Loop through each process checking for a deadlock.
     for (Process p : processes){
+        lockedResources.clear();
+        //If we have a deadlock
         if (checkDeadlock(p, null)){
-            currentStep = "Deadlock!";
+            lockString = "Deadlock!\n";
+            locked = true;
+            // Loop through and set all the lines to locked.
+            for(Resource r : lockedResources){
+                lockLines(r);
+            }
         }
     }
+
 }
 
+/**
+ * Display all nodes
+ */
 private void showNodes(){
     for (Node n : processes){
         n.show();
@@ -81,6 +117,11 @@ private void showNodes(){
     }
 }
 
+/**
+ * Get the resource based on its label name.
+ * @param  label Resource label
+ * @return       Resource found
+ */
 private Resource getResource(String label){
     for (Resource r : resources){
         if (r.getLabel().equals(label)){
@@ -91,6 +132,11 @@ private Resource getResource(String label){
     return null;
 }
 
+/**
+ * Get the process based on its label name.
+ * @param  label Process label
+ * @return       Process found
+ */
 private Process getProcess(String label){
     for (Process p : processes){
         if (p.getLabel().equals(label)){
@@ -101,12 +147,20 @@ private Process getProcess(String label){
     return null;
 }
 
+/**
+ * Go through the next step in our actions from the .data file.
+ */
 private void processStep(){
+    //Current process action
     ProcessAction currentAction = actions.get(step);
+    //Process involved in this action
     Process currentProcess = getProcess(currentAction.process);
+    //Resource involved in this action.
     Resource currentResource = getResource(currentAction.resource);
+    //Display the current step.
     currentStep += String.format("%s %s %s\n", currentAction.process, currentAction.action, currentAction.resource);
-    //System.out.println(String.format("%s - %s - %s", currentAction.process, currentAction.action, currentAction.resource));
+
+    //Process if the action is request of release.
     if (currentAction.action.equals("requests")){
         currentProcess.addResource(currentResource);
     }
@@ -118,45 +172,96 @@ private void processStep(){
     }
 }
 
+/**
+ * Recursive function to check for deadlock.
+ * @param  start   Starting process.
+ * @param  current Current process this level of recursion is on.
+ * @return         True if there is a dead lock. Otherwise false.
+ */
 private boolean checkDeadlock(Process start, Process current){
     //If this process is not waiting then we know this process is not locked.
     if (start.getWait().size() < 1){
         return false;
     }
+    //If this is not the first itteration of recursion.
     if (current != null){
         //If we are back where we started then we have a cycle.
         if (start == current){
             return true;
         }
     }
+    //If this is the first itteration.
     else{
+        lockedResources.add(start.getWait().get(0));
         current = start.getWait().get(0).getHolder();
     }
+    //If the current process is not waiting, then we know there is no deadlock.
     if (current.getWait().size() < 1){
         return false;
     }
 
+    //Temporarily add this process to the locked list.
+    lockedResources.add(current.getWait().get(0));
+
+    //Grab the next process in the cycle.
     Process nextProcess = current.getWait().get(0).getHolder();
 
+    //Recursion....
     return checkDeadlock(start, nextProcess);
-
-
-
-    // return false;
 }
 
+/**
+ * Lock lines with the resource r.
+ * @param r Resource that a line holds.
+ */
+public void lockLines(Resource r){
+    //Loop through the process lines
+    for (Process p : processes){
+        //grab the held lines.
+        for (HoldLine hl : p.getLines()){
+            if (hl.getResource() == r){
+                hl.setLocked(true);
+            }
+        }
+
+        //Grab the waited lines.
+        for (HoldLine hl : p.getWaitLines()){
+            if (hl.getResource() == r){
+                hl.setLocked(true);
+            }
+        }
+    }
+}
+
+/**
+ * Key press detection.
+ */
 public void keyPressed(){
     if (key == ' ' && step < actions.size()){
         processStep();
         step++;
     }
+
+    if (key == 'r'){
+        reset();
+    }
 }
+/**
+ * Class for displaying the lines that connect a process to a resource.
+ */
 public class HoldLine{
     float x1, x2, y1, y2, currentX, currentY;
     float incr, riseCount;
-    boolean growing, wait;
+    boolean growing, wait, locked;
     Resource resource;
 
+    /**
+     * Constructor for the HoldLine class
+     * @param x1 Starting x val for the line
+     * @param y1 Starting y val for the line
+     * @param x2 Ending x val for the line
+     * @param y2 Ending y val for the line
+     */
     public HoldLine(float x1, float y1, float x2, float y2){
         this.x1 = x1;
         this.x2 = x2;
@@ -170,37 +275,48 @@ public class HoldLine{
         wait = false;
     }
 
+    /**
+     * Is this line waiting?
+     */
     public void setWait(boolean b){
         wait = b;
     }
 
-    public void reset(){
-        growing = true;
-        incr = 0.80f;
+    /**
+     * Is this line locked?
+     */
+    public void setLocked(boolean b){
+        locked = b;
     }
 
+    /**
+     * Give a line a resource to reference
+     * @param r Resource this line is connected to.
+     */
     public void setResource(Resource r){
         resource = r;
     }
 
+    /**
+     * Get the resource this line is referencing.
+     * @return Resource
+     */
     public Resource getResource(){
         return resource;
     }
 
+    /**
+     * Is this line growing out? (Animation use)
+     */
     public boolean isGrowing(){
         return growing;
     }
 
+    /**
+     * Draw the line so it expands out (Animation use)
+     */
     private void grow(){
         if (incr < 1 && growing){
-            // if (wait){
-            //     // System.out.println("Y: " + y2 );
-            //     // System.out.println("Y/2: " + y2/2 );
-            //     stroke(30, 255, 30);
-            //     currentX = lerp(x1, (x2 + x1)/2, incr);
-            //     currentY = lerp(y1, (y2 + y1)/2, incr);
-            // }
-            // else{
             currentX = lerp(x1, x2, incr);
             currentY = lerp(y1, y2, incr);
 
@@ -211,6 +327,9 @@ public class HoldLine{
         }
     }
 
+    /**
+     * Pull the resource up with the line (Animation use)
+     */
     private void rise(){
         if (!growing && riseCount < 75 && !wait){
             currentY -= 5.0f;
@@ -220,14 +339,20 @@ public class HoldLine{
     }
 
 
-
+    /**
+     * Display the line on the screen (Animation use)
+     */
     public void show(){
         grow();
         rise();
-        if(!wait)
-            stroke(30, 255, 30);
-        else
+
+        //Color depends on the state of the line.
+        if(locked)
             stroke(255, 30, 30);
+        else if (wait)
+            stroke(30, 30, 255);
+        else
+            stroke(30, 255, 30);
 
         line(x1, y1, currentX, currentY);
     }
@@ -263,23 +388,44 @@ public class Node{
         return label;
     }
 
+    /**
+     * Get the X position of this node.
+     * @return X pos
+     */
     public float getX(){
         return x;
     }
 
+    /**
+     * Get the Y position of this node.
+     * @return Y pos
+     */
     public float getY(){
         return y;
     }
 
+    /**
+     * Set the Y pos of this node.
+     * @param tempY Y pos to set.
+     */
     public void setY(float tempY){
         y = tempY;
     }
 
+    /**
+     * Add a line attacted to this node.
+     * @param hl HoldLine object
+     * @param r  Resource it is attached to.
+     */
     public void addLine(HoldLine hl, Resource r){
         lines.add(hl);
         hl.setResource(r);
     }
 
+    /**
+     * Remove line from this node.
+     * @param r Resource the line to remove is attached to.
+     */
     public void removeLine(Resource r){
         for (HoldLine h : lines){
             if(r == h.getResource()){
@@ -310,43 +456,76 @@ public class Node{
     }
 }
 
+/**
+ * Class for the process.
+ */
 class Process extends Node{
     private ArrayList<Resource> heldResources;
     private ArrayList<Resource> waitResources;
+    private ArrayList<HoldLine> waitLines;
+
     private PopMenu menu;
 
+    /**
+     * Constructor for the Process class.
+     * @param label Name of this process
+     * @param x     X pos
+     * @param y     Y pos
+     */
     public Process(String label, int x, int y){
+        //Call parent constructor
         super(label, x, y);
         heldResources = new ArrayList<Resource>();
         waitResources = new ArrayList<Resource>();
+        waitLines = new ArrayList<HoldLine>();
+
+
         menu = new PopMenu(x, y - size * 2);
     }
 
+    /**
+     * Add a resource to this process.
+     * @param r Resource to add.
+     */
     public void addResource(Resource r){
+        //If the resource is not currently being held. Simply just add it.
         if (!r.isHeld()){
             heldResources.add(r);
+            //Line for display.
             addLine(new HoldLine(x, y, r.getX(), r.getY()), r);
             r.setHeld(true);
             r.setHolder(this);
         }
+        //Else we have to wait for this resource.
         else{
-            // HoldLine temp = new HoldLine(x, y, r.getX(), r.getY());
-            //heldResources.add(r);
+            //Display menu
             menu.addWait(r.getLabel());
             waitResources.add(r);
-            // addLine(temp, r);
-            // temp.setWait(true);
+            //Line for display.
+            HoldLine temp = new HoldLine(x, y, r.getX(), r.getY());
+            waitLines.add(temp);
+            temp.setResource(r);
+            temp.setWait(true);
         }
         r.addProcess(this);
-        // System.out.println("Resource added: " + r.getLabel());
     }
 
+    /**
+     * Notify this process that it is able to grab this resource. (Waiting on
+     * this resource.)
+     * @param r Resource to grab.
+     */
     public void notify(Resource r){
         addLine(new HoldLine(x, y, r.getOriginX(), r.getOriginY()), r);
         menu.removeWait(r.getLabel());
         waitResources.remove(r);
+        waitLines.clear();
     }
 
+    /**
+     * Release a resource for this process.
+     * @param r Resource to release.
+     */
     public void removeResource(Resource r){
         heldResources.remove(r);
         removeLine(r);
@@ -354,20 +533,52 @@ class Process extends Node{
         r.drop();
     }
 
+    /**
+     * Get the held resources
+     * @return ArrayList of resources
+     */
     public ArrayList<Resource> getHeld(){
         return heldResources;
     }
 
+    /**
+     * Get the resources that the process is waiting on.
+     * @return ArrrayList of resources.
+     */
     public ArrayList<Resource> getWait(){
         return waitResources;
     }
 
+    /**
+     * Get the lines that this process is attached with.
+     * @return ArrayList of HoldLines
+     */
+    public ArrayList<HoldLine> getLines(){
+        return lines;
+    }
 
+    /**
+     * Get the wait lines that this process is attached with.
+     * @return ArrayList of HoldLines
+     */
+    public ArrayList<HoldLine> getWaitLines(){
+        return waitLines;
+    }
+
+    /**
+     * Display this node. (had to override parent because of some color issues.)
+     */
     public void show(){
 
         for (HoldLine hl : lines){
             hl.show();
         }
+
+        for (HoldLine hl : waitLines){
+            hl.show();
+        }
+
+
         stroke(255);
         if(menu.isWaiting())
             stroke(247, 244, 81);
@@ -387,13 +598,23 @@ class Process extends Node{
     }
 }
 
+/**
+ * Class for the resources
+ */
 class Resource extends Node{
     private boolean held, drop;
     private float originX, originY;
     private Process holder;
     private ArrayList<Process> processList;
 
+    /**
+     * Contructor for the resource class.
+     * @param label Name of the resource.
+     * @param x     X pos of the resource.
+     * @param y     Y pos of the resource.
+     */
     public Resource(String label, int x, int y){
+        //Call parent constructor
         super(label, x, y);
         originX = x;
         originY = y;
@@ -402,34 +623,66 @@ class Resource extends Node{
         holder = null;
     }
 
+    /**
+     * Is this resource being held by another process?
+     * @return True if held. False otherwise.
+     */
     public boolean isHeld(){
         return held;
     }
 
+    /**
+     * Add a process that is requesting this resource.
+     * @param p [description]
+     */
     public void addProcess(Process p){
         processList.add(p);
     }
 
+    /**
+     * Get the original x pos
+     * @return Float x
+     */
     public float getOriginX(){
         return originX;
     }
 
+    /**
+     * Get the original Y pos
+     * @return Float Y
+     */
     public float getOriginY(){
         return originY;
     }
 
+    /**
+     * Set this resource to held.
+     * @param b True if want held. Else false.
+     */
     public void setHeld(boolean b){
         held = b;
     }
 
+    /**
+     * Get the current holder of this resource.
+     * @return [description]
+     */
     public Process getHolder(){
         return holder;
     }
 
+    /**
+     * Set the holder of this resource.
+     * @param p Process that holds this resource.
+     */
     public void setHolder(Process p){
         holder = p;
     }
 
+    /**
+     * Drop the resource. Reset the holder and notify the next process that this
+     * resource can now be used.
+     */
     public void drop(){
         drop = true;
         processList.remove(0);
@@ -442,6 +695,9 @@ class Resource extends Node{
         }
     }
 
+    /**
+     * Drop this resource (Animation use.)
+     */
     public void displayDrop(){
         if (y < originY && drop){
             y += 5.0f;
@@ -451,6 +707,9 @@ class Resource extends Node{
         }
     }
 
+    /**
+     * Show this resource.
+     */
     public void show(){
         stroke(255);
         super.show();
@@ -458,11 +717,20 @@ class Resource extends Node{
     }
 
 }
+
+/**
+ * Class for displaying the resource that a current process is waiting on.
+ */
 public class PopMenu{
     private float x, y, w, h;
     ArrayList<String> labels;
     String text;
 
+    /**
+     * Contructor for the PopMenu class.
+     * @param x [description]
+     * @param y [description]
+     */
     public PopMenu(float x, float y){
         this.x = x;
         this.y = y;
@@ -472,10 +740,18 @@ public class PopMenu{
         this.text = "Waiting: \n";
     }
 
+    /**
+     * Add a resource to wait on.
+     * @param s Label of resource.
+     */
     public void addWait(String s){
         labels.add(s);
     }
 
+    /**
+     * Remove a process wait.
+     * @param s Label of resource
+     */
     public void removeWait(String s){
         for (int i = 0; i < labels.size(); i++){
             String label = labels.get(i);
@@ -485,11 +761,18 @@ public class PopMenu{
         }
     }
 
+    /**
+     * Does this Menu contain any labels?
+     */
     public boolean isWaiting(){
         return labels.size() > 0;
     }
 
+    /**
+     * Display the Menu.
+     */
     public void show(){
+        //Only display if our process is waiting.
         if (labels.size() > 0){
             rectMode(CENTER);
             noFill();

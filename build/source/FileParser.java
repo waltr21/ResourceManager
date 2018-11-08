@@ -1,18 +1,28 @@
 import java.io.*;
 import java.util.ArrayList;
 
+/**
+ * Class to read in the .data files.
+ */
 public class FileParser{
     public int numProcesses, numResources;
     public ArrayList<ProcessAction> actions;
     private String fileName;
 
+    /**
+     * Constructor for the FileParser class.
+     * @param fileName String for the name of the file.
+     */
     public FileParser(String fileName){
         this.fileName = fileName;
         actions = new ArrayList<ProcessAction>();
         readFile();
     }
 
-    public void readFile(){
+    /**
+     * Read in the file.
+     */
+    private void readFile(){
         try{
             File file = new File(fileName);
 
@@ -30,10 +40,10 @@ public class FileParser{
                 //Grab Resources.
                 else if (count == 1)
                     numResources = Integer.parseInt(splitString[0]);
+                //Grab action
                 else{
                     actions.add(new ProcessAction(splitString));
                 }
-
                 count++;
             }
         }
@@ -42,6 +52,10 @@ public class FileParser{
         }
     }
 
+    /**
+     * Get the actions loaded in from the file.
+     * @return ArrayList of ProcessActions
+     */
     public ArrayList<ProcessAction> getActions(){
         return actions;
     }
@@ -52,9 +66,16 @@ public class FileParser{
     }
 }
 
+/**
+ * Class to hold the action in the data file
+ */
 class ProcessAction{
     public String resource, process, action;
 
+    /**
+     * Constructor for the ProcessAction class
+     * @param arr Array of Strings representing the actions
+     */
     public ProcessAction(String[] arr){
         process = arr[0];
         action = arr[1];
